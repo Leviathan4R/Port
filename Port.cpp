@@ -8,7 +8,7 @@
 #include "serialib.h"
 #include <chrono>
 #include <thread>
-#include <windows.h>
+//#include <windows.h>
 
 
 #define SERIAL_PORT_OUT "COM4"
@@ -24,24 +24,21 @@ char readBuffer[bufSize] = {0};
 
 int writeLoop() {
     while(run) {
-        if (serial_out.available() < 100*bufSize) {
-            serial_out.writeBytes(buffer, bufSize);
-        }
-    }
-}
+        printf("%i,", serial_out.available());
 
-int readLoop() {
-    while(run) {
-        if(serial_out.available() > bufSize) {
+        while (serial_out.available() > bufSize) {
             serial_out.readBytes(readBuffer, bufSize, 0, 0);
-
+/*
             for (size_t i = 0; i < bufSize; ++i)
             {
                 if (buffer[i] != readBuffer[i]) {
                     run = false;
                 }
-            }
+            }*/
         }
+        //serial_out.flushReceiver();
+        
+        serial_out.writeString(buffer);
     }
 }
 
@@ -50,17 +47,24 @@ int main() {
     // serialib serial_out;
     // serialib serial_in;
 
-    char errorOpening = serial_out.openDevice(SERIAL_PORT_OUT, 115200);
+    
+    char errorOpening = serial_out.openDevice(SERIAL_PORT_OUT, 9600);
+    if (errorOpening != 1) {
+        return -1;
+    }
+    serial_out.closeDevice();
+
+    errorOpening = serial_out.openDevice(SERIAL_PORT_OUT, 115200);
     
     if (errorOpening != 1) {
         return -1;
     }
 
+    
 
     std::cout << "Buffer: "<< buffer << std::endl;
 
-    std::thread readingThread(readLoop);
-    std::thread writingThread(writeLoop); 
+    writeLoop();
 
     /*
     for (size_t i = 0; i < bufSize; ++i)
@@ -75,9 +79,6 @@ int main() {
 
         std::this_thread::sleep_for(std::chrono::seconds(4));
     }*/
-
-    writingThread.join();
-    readingThread.join();
 
     std::cout<< "Original buffer: " << buffer <<std::endl;
     std::cout<< "Read buffer: " << readBuffer <<std::endl;

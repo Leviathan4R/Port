@@ -422,6 +422,7 @@ volatile int finishedtt = 0;
 
 VOID WINAPI FileWrittenCallback(DWORD dwErrorCode, DWORD dwBytesTransferred, LPOVERLAPPED lpOverlapped) {
 	finishedtt--;
+    writeLoop();
     std::cout << "Zapisane" << "\n";
 }
 
