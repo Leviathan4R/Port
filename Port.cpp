@@ -9,7 +9,7 @@
 //#include <windows.h>
 
 
-#define SERIAL_PORT_OUT "COM4"
+#define SERIAL_PORT_OUT "COM10"
 int readyToRead = 0;
 
 const size_t bufSize = 55;

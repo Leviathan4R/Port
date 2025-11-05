@@ -7,9 +7,8 @@
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
-                "--std=c++20",
-                "${workspaceFolder}\\Port.cpp",
-                "${workspaceFolder}\\Main2.cpp",
+                "--std=c++11",
+                "${file}",
                 "${workspaceFolder}\\serialib.cpp",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe"
