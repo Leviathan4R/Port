@@ -71,6 +71,19 @@
         "xlocmes": "cpp",
         "xlocmon": "cpp",
         "xloctime": "cpp",
-        "xtree": "cpp"
-    }
+        "xtree": "cpp",
+        "hash_map": "cpp",
+        "cwctype": "cpp",
+        "bit": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "memory_resource": "cpp",
+        "numeric": "cpp",
+        "random": "cpp",
+        "numbers": "cpp",
+        "semaphore": "cpp",
+        "stop_token": "cpp"
+    },
+	"C_Cpp.default.compilerPath": "/usr/bin/g++",
+	"C_Cpp.default.cppStandard": "c++20",
 }

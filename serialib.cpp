@@ -16,10 +16,6 @@ This is a licence-free software, it can be used by anyone who try to build a bet
  */
 
 #include "serialib.h"
-#include <stdlib.h>
-#include <stdio.h>
-#include <iostream>
-#include <windows.h>
 
 
 
@@ -151,7 +147,7 @@ char serialib::openDevice(const char *Device, const unsigned int Bauds,
                           SerialStopBits Stopbits) {
 #if defined (_WIN32) || defined( _WIN64)
     // Open serial port
-    hSerial = CreateFileA(Device,GENERIC_READ | GENERIC_WRITE,0,0,OPEN_EXISTING,0/*FILE_ATTRIBUTE_NORMAL*/,0);
+    hSerial = CreateFileA(Device,GENERIC_READ | GENERIC_WRITE,0,0,OPEN_EXISTING,/*FILE_ATTRIBUTE_NORMAL*/0,0);
     if(hSerial==INVALID_HANDLE_VALUE) {
         if(GetLastError()==ERROR_FILE_NOT_FOUND)
             return -1; // Device not found
@@ -418,13 +414,6 @@ int serialib::writeChar(const char Byte)
 #endif
 }
 
-volatile int finishedtt = 0;
-
-VOID WINAPI FileWrittenCallback(DWORD dwErrorCode, DWORD dwBytesTransferred, LPOVERLAPPED lpOverlapped) {
-	finishedtt--;
-    writeLoop();
-    std::cout << "Zapisane" << "\n";
-}
 
 
 //________________________________________
@@ -440,19 +429,12 @@ VOID WINAPI FileWrittenCallback(DWORD dwErrorCode, DWORD dwBytesTransferred, LPO
 int serialib::writeString(const char *receivedString)
 {
 #if defined (_WIN32) || defined( _WIN64)
-    finishedtt++;
     // Number of bytes written
     DWORD dwBytesWritten;
     // Write the string
-    OVERLAPPED oFile;
-	oFile.Offset = 0xFFFFFFFF;
-	oFile.OffsetHigh = 0xFFFFFFFF;
-
-    //while(finishedtt > 1000){};
-
-    int exitval = WriteFileEx(hSerial,receivedString,8,&oFile, (LPOVERLAPPED_COMPLETION_ROUTINE)FileWrittenCallback);
-    if(exitval != WAIT_IO_COMPLETION) finishedtt--;
-    //else std::cout << "Zapisane" << "\n";
+    if(!WriteFile(hSerial,receivedString,strlen(receivedString),&dwBytesWritten,NULL))
+        // Error while writing, return -1
+        return -1;
     // Write operation successfull
     return 1;
 #endif
@@ -461,35 +443,6 @@ int serialib::writeString(const char *receivedString)
     int Lenght=strlen(receivedString);
     // Write the string
     if (write(fd,receivedString,Lenght)!=Lenght) return -1;
-    // Write operation successfull
-    return 1;
-#endif
-}
-
-
-VOID WINAPI FileReadCallback(DWORD dwErrorCode, DWORD dwBytesTransferred, LPOVERLAPPED lpOverlapped) {
-    readyToRead = 1;
-   
-    std::cout << "buffer" << "\n";
-}
-
-int serialib::readStringFromsSerial(const void *Buffer, const unsigned int NbBytes)
-{
-#if defined (_WIN32) || defined( _WIN64)
-    readyToRead = 0;
-    // Number of bytes written
-    DWORD dwBytesWritten;
-    OVERLAPPED oFile;
-	oFile.Offset = 0xFFFFFFFF;
-	oFile.OffsetHigh = 0xFFFFFFFF;
-   
-    ReadFile(hSerial,&Buffer,NbBytes,NULL, &oFile);
-    
-    return 1;
-#endif
-#if defined (__linux__) || defined(__APPLE__)
-    // Write data
-    if (write (fd,Buffer,NbBytes)!=(ssize_t)NbBytes) return -1;
     // Write operation successfull
     return 1;
 #endif
@@ -507,14 +460,11 @@ int serialib::readStringFromsSerial(const void *Buffer, const unsigned int NbByt
      \return 1 success
      \return -1 error while writting data
   */
-int serialib::writeBytes(const void *Buffer, const unsigned int NbBytes)
+int serialib::writeBytes(const void *Buffer, const unsigned int NbBytes, unsigned int *NbBytesWritten)
 {
 #if defined (_WIN32) || defined( _WIN64)
-    // Number of bytes written
-    DWORD dwBytesWritten;
-   
-    // Write data
-    if(!WriteFile(hSerial, Buffer, NbBytes, &dwBytesWritten, NULL))
+    // Write data:
+    if(!WriteFile(hSerial, Buffer, NbBytes, (LPDWORD)NbBytesWritten, NULL))
         // Error while writing, return -1
         return -1;
     // Write operation successfull
@@ -522,13 +472,18 @@ int serialib::writeBytes(const void *Buffer, const unsigned int NbBytes)
 #endif
 #if defined (__linux__) || defined(__APPLE__)
     // Write data
-    if (write (fd,Buffer,NbBytes)!=(ssize_t)NbBytes) return -1;
+    *NbBytesWritten = write (fd,Buffer,NbBytes);
+    if (*NbBytesWritten !=(ssize_t)NbBytes) return -1;
     // Write operation successfull
     return 1;
 #endif
 }
 
-
+int serialib::writeBytes(const void *Buffer, const unsigned int NbBytes)
+{
+    unsigned int NbBytesWritten;
+    return writeBytes(Buffer, NbBytes, &NbBytesWritten);
+}
 
 /*!
      \brief Wait for a byte from the serial device and return the data read
@@ -551,11 +506,9 @@ int serialib::readChar(char *pByte,unsigned int timeOut_ms)
 
     // Write the parameters, return -1 if an error occured
     if(!SetCommTimeouts(hSerial, &timeouts)) return -1;
-    
-    // Read the byte, return -2 if an error occured
-    byte data[4];
-    if(!ReadFile(hSerial,data, 4, &dwBytesRead, NULL)) return -2;
 
+    // Read the byte, return -2 if an error occured
+    if(!ReadFile(hSerial,pByte, 1, &dwBytesRead, NULL)) return -2;
 
     // Return 0 if the timeout is reached
     if (dwBytesRead==0) return 0;
@@ -702,6 +655,7 @@ int serialib::readString(char *receivedString,char finalChar,unsigned int maxNbB
     return -3;
 }
 
+
 /*!
      \brief Read an array of bytes from the serial device (with timeout)
      \param buffer : array of bytes read from the serial device
@@ -730,12 +684,9 @@ int serialib::readBytes (void *buffer,unsigned int maxNbBytes,unsigned int timeO
     // Write the parameters and return -1 if an error occrured
     if(!SetCommTimeouts(hSerial, &timeouts)) return -1;
 
-    OVERLAPPED oFile;
-	oFile.Offset = 0xFFFFFFFF;
-	oFile.OffsetHigh = 0xFFFFFFFF;
 
     // Read the bytes from the serial device, return -2 if an error occured
-    if(!ReadFile(hSerial,buffer,(DWORD)maxNbBytes, &dwBytesRead, NULL))  return -2;
+    if(!ReadFile(hSerial,buffer,(DWORD)maxNbBytes,&dwBytesRead, NULL))  return -2;
 
     // Return the byte read
     return dwBytesRead;

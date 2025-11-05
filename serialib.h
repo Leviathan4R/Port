@@ -1,4 +1,4 @@
-/*
+/*!
 \file    serialib.h
 \brief   Header file of the class serialib. This class is used for communication over a serial device.
 \author  Philippe Lucidarme (University of Angers)
@@ -18,10 +18,6 @@ This is a licence-free software, it can be used by anyone who try to build a bet
 
 #ifndef SERIALIB_H
 #define SERIALIB_H
-
-extern int readyToRead;
-
-int writeLoop();
 
 #if defined(__CYGWIN__)
     // This is Cygwin special case
@@ -96,10 +92,11 @@ enum SerialParity {
 class serialib
 {
 public:
+
     //_____________________________________
     // ::: Constructors and destructors :::
 
-    
+
 
     // Constructor of the class
     serialib    ();
@@ -160,9 +157,8 @@ public:
     // ::: Read/Write operation on bytes :::
 
 
-     int     readStringFromsSerial  (const void *Buffer, const unsigned int NbBytes);
-
     // Write an array of bytes
+    int     writeBytes(const void *Buffer, const unsigned int NbBytes, unsigned int *NbBytesWritten);
     int     writeBytes  (const void *Buffer, const unsigned int NbBytes);
 
     // Read an array of byte (with timeout)
