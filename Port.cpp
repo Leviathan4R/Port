@@ -22,9 +22,9 @@ char readBuffer[bufSize] = {0};
 
 int writeLoop() {
     while(run) {
-        printf("%i,", serial_out.available());
+        printf("%i,", serial_out.getInQueStat());
 
-        while (serial_out.available() > bufSize) {
+        while (serial_out.getInQueStat() > bufSize) {
             serial_out.readBytes(readBuffer, bufSize, 0, 0);
 /*
             for (size_t i = 0; i < bufSize; ++i)

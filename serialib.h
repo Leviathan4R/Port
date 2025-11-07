@@ -1,4 +1,4 @@
-/*!
+/**
 \file    serialib.h
 \brief   Header file of the class serialib. This class is used for communication over a serial device.
 \author  Philippe Lucidarme (University of Angers)
@@ -170,13 +170,25 @@ public:
     // _________________________
     // ::: Special operation :::
 
-
+    
     // Empty the received buffer
     char    flushReceiver();
-
+// ! modification in these functions
     // Return the number of bytes in the received buffer
-    int     available();
+    int     getInQueStat();
 
+    // Return the number of bytes in the outcoming buffer
+    int     getOutQueStat();
+
+    // Return the maximum number of bytes in the received buffer
+    int     getInQueMax();
+
+    // Return the maximum number of bytes in the outcoming buffer
+    int     getOutQueMax();  
+#if defined(_WIN32) || defined(_WIN64)
+    // Sets the eventMask pointer to event handler
+    bool    waitCommEvent(LPDWORD lpEvtMask);
+#endif
 
 
 
