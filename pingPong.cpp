@@ -17,20 +17,6 @@ static inline int moveToPos(char const& x, char const& y) {
     return 0;
 }
 
-static inline int moveToPos(serialib& aSerial, char const& x, char const& y) {
-    char aString[4] = {'p', x, y, 'l'};
-    unsigned int bytesWritten = 0;
-    aSerial.writeBytes(aString, 4, &bytesWritten);
-    if (bytesWritten != 4)
-        return -1;
-
-    aSerial.readBytes(aString, 2, 10);
-
-    // TODO: kontrola co vrati zbernica
-
-    return 0;
-}
-
 static inline int printChar(char const& aCharacter, char const& aParams) {
     unsigned int printVal = aParams;
     std::cout << "\e[4" << (printVal & 0b111) << "m";
@@ -40,31 +26,75 @@ static inline int printChar(char const& aCharacter, char const& aParams) {
     return 0;
 }
 
-static inline int printChar(serialib& aSerial, char const& aCharacter, char const& aParams) {
-    char aString[4] = {'c', aCharacter, aParams, 'l'};
+static inline int _printChar(serialib& aSerial, char const& aOper, char const& aCharacter, char const& aParams, size_t aCount = 1) {
+    unsigned char message[4] = {aOper, aCharacter, aParams, 'l'};
+    unsigned char retVal[2] = { 0 };
     unsigned int bytesWritten = 0;
-    aSerial.writeBytes(aString, 4, &bytesWritten);
-    if (bytesWritten != 4)
-        return -1;
+    int tries = 0;
 
-    aSerial.readBytes(aString, 2, 10);
+    aSerial.flushReceiver();
 
-    // TODO: kontrola co vrati zbernica
+    for (size_t i = 0; i < aCount; ++i) {
+        aSerial.writeBytes(message, 4, &bytesWritten);
+        if (bytesWritten != 4) {
+            if(!aSerial.getInQueStat()) {
+                return -1;
+            }
+            else {
+                --i;
+                Sleep(1);
+                if(tries > 5) {
+                    return -1;
+                }
+                ++tries;
+                continue;
+            }
+
+            tries = 0;
+        }
+    }
+
+    while(aSerial.getOutQueStat() != 0) {
+        Sleep(1);
+    }
+
+    for (size_t i = 0; i < aCount; ++i)
+    {
+        if (aSerial.getInQueStat() < 2) {
+            return -2;
+        }
+        if (aSerial.readBytes(retVal, 2, 0, 0) != 2) {
+            return -2;
+        }
+        if (retVal[0] != 'A' || retVal[1] != aOper) {
+            return -3;
+        }
+    }
+    
+    aSerial.flushReceiver();
 
     return 0;
 }
 
+static inline int printChar(serialib& aSerial, char const& aCharacter, char const& aParams, size_t aCount = 1) {
+    return _printChar(aSerial, 'c', aCharacter, aParams, aCount);
+}
+
+static inline int moveToPos(serialib& aSerial, char const& x, char const& y) {
+    return _printChar(aSerial, 'p', x, y, 1);
+}
+
 static inline int clrScreen(serialib& aSerial) {
-    unsigned char aString[4] = {'e', 127, 127, 'l'};
+    unsigned int aString[4] = {'e', 127, 127, 'l'};
     unsigned int bytesWritten = 0;
     aSerial.writeBytes(aString, 4, &bytesWritten);
     if (bytesWritten != 4)
         return -1;
 
-    aSerial.readBytes(aString, 2, 10);
+    while(aSerial.getOutQueStat())
+        Sleep(1);
 
-    if (aString[0] != 'A' || aString[1] != 'e')
-        return -2;
+    aSerial.flushReceiver();
 
     return 0;
 }
@@ -153,8 +183,8 @@ int main(int argc, char const* argv[]) {
 
     int error = 0;
     
-    std::cin >> error;
-    /*error = serial_out.openDevice(SERIAL_PORT_OUT, 9600);
+    // std::cin >> error;
+    error = serial_out.openDevice(SERIAL_PORT_OUT, 9600);
     if (error != 1) {
         std::cerr << "Nepodarilo sa pripojit v prvom kroku!" << std::endl;
         std::cin >> error;
@@ -168,34 +198,38 @@ int main(int argc, char const* argv[]) {
         std::cerr << "Nepodarilo sa pripojit v druhom kroku!" << std::endl;
         std::cin >> error;
         return -1;
-    }*/
-
-    char farbaBiela = (char)0b11111111;
-    char farbaCierna = 0;
-
-    moveToPos(/*serial_out,*/ 0, 0);
-    size_t i = 0, u = 0;
-    for (; i < 80; ++i) {
-        printChar(/*serial_out,*/ ' ', farbaBiela);
     }
 
-    for (u = 1; u < 39; ++u) {
-        for (i = 0; i < 80; ++i) {
-            printChar(/*serial_out,*/ ' ', farbaCierna);
-        }
-    }
+    std::cout << "velkost I / O bufferu: " << serial_out.getInQueMax() << "/" << serial_out.getOutQueMax() << std::endl;
 
-    moveToPos(/*serial_out,*/ 0, 39);
-    for (i = 0; i < 80; ++i) {
-        printChar(/*serial_out,*/ ' ', farbaBiela);
-    }
+    std::cout << "Vystupny buffer: " << serial_out.getOutQueStat() << std::endl;
 
-    char realRow = 0, realCol = 0;
-    constexpr char resRow = 40, resCol = 80;
-    constexpr int minRow = 1, maxRow = 38, minCol = 1, maxCol = 78;
-    int row = 200, col = 400;
-    int movRow = 20, movCol = 40;
-    while (true) {
+    constexpr char farbaBiela = (char)0b11111111;
+    constexpr char farbaCierna = 0;
+
+    moveToPos(serial_out, 0, 0);
+    
+    error = printChar(serial_out, ' ', farbaBiela, 80);
+    if (error) 
+        std::cerr << "chyba v zapisani" << std::endl;
+    
+    for (size_t u = 1; u < 39; ++u) {
+        error = printChar(serial_out, ' ', farbaCierna, 80);
+        if (error) 
+            std::cerr << "chyba v zapisani" << std::endl;
+    };
+
+    moveToPos(serial_out, 0, 39);
+    error = printChar(serial_out, ' ', farbaBiela, 80);
+    if (error) 
+        std::cerr << "chyba v zapisani" << std::endl;
+
+    unsigned int realRow = 1, realCol = 1;
+    constexpr unsigned int resRow = 1, resCol = 1;
+    constexpr unsigned int minRow = 1, maxRow = 38, minCol = 1, maxCol = 78;
+    unsigned int row = 1, col = 1;
+    int movRow = 1, movCol = 1;
+    while (error == 0) {
         // Odrazy od stien
         if (realRow >= maxRow) {
             movRow = -abs(movRow);
@@ -214,24 +248,39 @@ int main(int argc, char const* argv[]) {
         col += movCol;
 
         // We dont need to write in every cycle
-        if (realRow != (char)(row / resRow) || realCol != (char)(col / resCol)) {
-            error = moveToPos(/*serial_out,*/ realCol, realRow);
-            error = printChar(/*serial_out,*/ ' ', farbaCierna);    // Stores the previous positions
+        if (realRow != (row / resRow) || realCol != (col / resCol)) {
+            error = moveToPos(serial_out, realCol, realRow);    // Stores the previous positions
+            if (error < 0) 
+                return -1;
+            error = printChar(serial_out, ' ', farbaCierna);
+            if (error < 0) 
+                return -1;
 
-            realRow = (char)(row / resRow);
-            realCol = (char)(col / resCol);
+            realRow = (row / resRow);
+            realCol = (col / resCol);
 
             // Example of write
-            error = moveToPos(/*serial_out,*/ realCol, realRow);
-            error = printChar(/*serial_out,*/ ' ', farbaBiela);
+            error = moveToPos(serial_out, realCol, realRow);    // Stores the new positions
+            if (error < 0) 
+                return -1;
+            error = printChar(serial_out, ' ', farbaBiela);
+            if (error < 0) 
+                return -1;
+        }
+
+        if(realRow != row || realCol != col) {
+            return -1;
         }
 
 #if defined(_WIN32) || defined(_WIN64)
-        Sleep(20);
+        Sleep(50);
 #elif defined(__linux__)
         usleep(20000);
 #endif
     }
+
+    if (error) 
+        std::cerr << "chyba v zapisani" << std::endl;
 
     std::cin >> error;
     return 0;

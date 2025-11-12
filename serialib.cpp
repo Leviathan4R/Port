@@ -270,6 +270,8 @@ char serialib::openDevice(const char* Device, const unsigned int Bauds,
     // Write the parameters
     if (!SetCommState(hSerial, &dcbSerialParams)) return -5;
 
+    if (!SetupComm(hSerial, 4096, 4096)) return -5;     // Setup IO buffers to 4 KiB
+
     // Set TimeOut
 
     // Set the Timeout parameters
@@ -905,10 +907,11 @@ int serialib::getOutQueMax() {
 
 
 #if defined(_WIN32) || defined(_WIN64)
-bool waitCommEvent(LPDWORD lpEvtMask) {
+
+bool serialib::waitCommEvent(LPDWORD lpEvtMask) {
     WaitCommEvent(hSerial, lpEvtMask, nullptr);
-    #error "Check if these work!"
 }
+
 #endif
 
 // __________________
