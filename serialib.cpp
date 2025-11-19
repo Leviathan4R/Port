@@ -812,11 +812,11 @@ int serialib::readBytes(void* buffer, unsigned int maxNbBytes, unsigned int time
 
 /*!
     \brief Empty receiver buffer
-    Note that when using serial over USB on Unix systems, a delay of 20ms may be necessary before calling the flushReceiver function
+    Note that when using serial over USB on Unix systems, a delay of 20ms may be necessary before calling the flushInQue function
     \return If the function succeeds, the return value is nonzero.
             If the function fails, the return value is zero.
 */
-char serialib::flushReceiver() {
+char serialib::flushInQue() {
 #if defined(_WIN32) || defined(_WIN64)
     // Purge receiver
     return PurgeComm(hSerial, PURGE_RXCLEAR);

@@ -34,7 +34,7 @@ int writeLoop() {
                 }
             }*/
         }
-        //serial_out.flushReceiver();
+        //serial_out.flushInQue();
         
         serial_out.writeString(buffer);
     }

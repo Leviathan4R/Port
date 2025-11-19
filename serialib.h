@@ -172,7 +172,7 @@ public:
 
     
     // Empty the received buffer
-    char    flushReceiver();
+    char    flushInQue();
 // ! modification in these functions
     // Return the number of bytes in the received buffer
     int     getInQueStat();
