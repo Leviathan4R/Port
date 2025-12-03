@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <string>
+#include <chrono>
 #include <thread>
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
@@ -18,23 +19,21 @@
 X: 30-40 death zone
 */
 
-constexpr char farbaBiela = (char)0b11111111;
+constexpr char farbaBiela = (char)0b01111111;
 constexpr char farbaKontrast = (char)0b00000111;
 constexpr char farbaCierna = 0b00000000;
 constexpr char padSize = 6;
 constexpr char minX = 0, maxX = 79, minY = 0, maxY = 39;
 constexpr int posResX = 100 * 80 - 1, posResY = 100 * 40 - 1;
 
-struct TPosChar
-{
+struct TPosChar {
     char iPosX;
     char iPosY;
-    char iChar;
     char iAtr;
+    char iChar;
 };
 
-int clrScreen(serialib &aSerial)
-{
+int clrScreen(serialib &aSerial) {
     unsigned char aString[4] = {'e', 127, 127, 'l'};
     unsigned int bytesWritten = 0;
     aSerial.writeBytes(aString, 4, &bytesWritten);
@@ -81,9 +80,9 @@ char getKeyDownRight() {
 
 class pingPong
 {
-    std::deque<TPosChar> iCheck_buffer;
+    std::deque<unsigned char> iWriteBuffer;
     size_t iCheckCount;
-    serialib iSerial_out;
+    serialib iSerialOut;
 
     char iScoreLeft = 0, iScoreRight = 0;
 
@@ -92,34 +91,29 @@ class pingPong
     int iRealX, iRealY;
     int iMoveX, iMoveY;
 
-    int moveToPos(char const &aX, char const &aY)
-    {
-        char aString[4] = {'p', aX, aY, 'l'};
-        unsigned int bytesWritten = 0;
-        iSerial_out.writeBytes(aString, 4, &bytesWritten);
-        if (bytesWritten != 4)
-            return -1;
-
-        iSerial_out.readBytes(aString, 2, 10, 0);
-
-        // TODO: controla co vrati zbernica
-
-        return 0;
+    void moveToPos(char const &aX, char const &aY) {
+        iWriteBuffer.push_back(aX);
+        iWriteBuffer.push_back(aY);
+        return;
     }
 
-    int printChar(char const &aCharacter, char const &aParams)
-    {
-        char aString[4] = {'c', aCharacter, aParams, 'l'};
-        unsigned int bytesWritten = 0;
-        iSerial_out.writeBytes(aString, 4, &bytesWritten);
-        if (bytesWritten != 4)
-            return -1;
+    void printChar(char const &aCharacter, char const &aParams) {
+        
+        iWriteBuffer.push_back(aCharacter | 0x80);
+        iWriteBuffer.push_back(aParams | 0x80);
+        return;
+    }
 
-        iSerial_out.readBytes(aString, 2, 10, 0);
-
-        // TODO: controla co vrati zbernica
-
-        return 0;
+    void printString(const char* aString, char const& aParam) {
+        if(!aString) {
+            return;
+        }
+        while(*aString) {
+            iWriteBuffer.push_back(*aString | 0x80);
+            iWriteBuffer.push_back(aParam | 0x80);
+            aString = aString + 1;
+        }
+        return;
     }
 
     void movePad(char &aPad, char aMove)
@@ -158,12 +152,7 @@ class pingPong
 
     void updateScore() {
         moveToPos(31, 0);
-        printChar('S', farbaKontrast);
-        printChar('c', farbaKontrast);
-        printChar('o', farbaKontrast);
-        printChar('r', farbaKontrast);
-        printChar('e', farbaKontrast);
-        printChar(' ', farbaBiela);
+        printString("Score ", farbaKontrast);
         printChar((iScoreLeft / 10) + '0', farbaKontrast);
         printChar(iScoreLeft + '0', farbaKontrast);
         printChar(' ', farbaBiela);
@@ -172,7 +161,7 @@ class pingPong
         printChar(iScoreRight + '0', farbaKontrast);
     }
 public:
-    pingPong(const char *aPort, char aPosX, char aPosY) : iCheck_buffer(), iSerial_out()
+    pingPong(const char *aPort, char aPosX, char aPosY) : iWriteBuffer(), iSerialOut()
     {
         if(aPosX > maxX || aPosY > maxY) {
             throw std::invalid_argument("Neplatne pociatocne pozicie");
@@ -188,19 +177,19 @@ public:
         iMoveX = 50;
         iMoveY = 50;
 
-        char error = iSerial_out.openDevice(aPort, 115200);
+        char error = iSerialOut.openDevice(aPort, 115200);
 
         if (error != 1)
         {
             throw std::runtime_error("Nepodarilo sa pripojit k zbernici!");
         }
 
-        iSerial_out.flushInQue();
+        iSerialOut.flushInQue();
     }
 
     ~pingPong()
     {
-        iSerial_out.closeDevice();
+        iSerialOut.closeDevice();
     };
 
     void writePosChar(TPosChar & aOper) {
@@ -236,32 +225,33 @@ public:
         // iCheck_buffer.push_back({iPosX, iPosY, ' ', farbaCierna});
     }
 
-    void moveLeftPadUp()
-    {
-        movePad(iPadLeft, +1);
-        return;
-    }
+    void readKeyboard() {
+        switch (getKeyDownLeft())
+        {
+            case -1:
+                movePad(iPadLeft, +1);
+                break;
+            case 1:
+                movePad(iPadLeft, -1);
+            default:
+                break;
+        }
 
-    void moveLeftPadDown()
-    {
-        movePad(iPadLeft, -1);
-        return;
-    }
-
-    void moveRightPadUp()
-    {
-        movePad(iPadRight, +1);
-        return;
-    }
-
-    void moveRightPadDown()
-    {
-        movePad(iPadRight, -1);
-        return;
+        switch (getKeyDownRight())
+        {
+            case -1:
+                movePad(iPadRight, +1);
+                break;
+            case 1:
+                movePad(iPadRight, -1);
+            default:
+                break;
+        }
     }
 
     void initScreen() {
         moveToPos(0, 0);
+
         size_t i = 0, u = 0;
         for (; i < 80; ++i)
         {
@@ -297,131 +287,82 @@ public:
     }
 
     // Starts the checking and writing process
-    void flushBuffer()
-    {
-        char writeBuffer[4] = {};
+    void flushBuffer() {
+        unsigned char writeBuffer[4] = {'c', ' ', farbaBiela, 'l'};
         unsigned int bytesWritten = 4;
 
-        if (iSerial_out.getInQueStat() != iCheckCount * 4)
-        {
-            // leave all bytes intact, we need repairs
-            iSerial_out.flushInQue();
-
-            TPosChar iter;
-            char readBuffer[2] = {};
-            writeBuffer[3] = 'l';
-
-            for (size_t i = 0; i < iCheckCount; ++i)
-            {
-                iter = iCheck_buffer.front();
-
-                writeBuffer[0] = 'p';
-                writeBuffer[1] = iter.iPosX;
-                writeBuffer[2] = iter.iPosY;
-
-                do
-                {
-                    iSerial_out.writeBytes(writeBuffer, 4, &bytesWritten);
-                    if (bytesWritten != 4)
-                    {
-                        continue;
-                    }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                    if (iSerial_out.getInQueStat() < 2)
-                    {
-                        iSerial_out.flushInQue();
-                        continue;
-                    }
-                    iSerial_out.readBytes(readBuffer, 2, 0, 0);
-                    iSerial_out.flushInQue();
-
-                } while (readBuffer[0] != 'A' || readBuffer[1] != 'p');
-
-                writeBuffer[0] = 'c';
-                writeBuffer[1] = iter.iChar;
-                writeBuffer[2] = iter.iAtr;
-
-                do
-                {
-                    iSerial_out.writeBytes(writeBuffer, 4, &bytesWritten);
-                    if (bytesWritten != 4)
-                    {
-                        continue;
-                    }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                    if (iSerial_out.getInQueStat() < 2)
-                    {
-                        iSerial_out.flushInQue();
-                        continue;
-                    }
-                    iSerial_out.readBytes(readBuffer, 2, 0, 0);
-                    iSerial_out.flushInQue();
-
-                } while (readBuffer[0] != 'A' || readBuffer[1] != 'c');
-
-                iCheck_buffer.pop_front();
-            }
-            iCheckCount = 0;
-        }
-        else
-        {
-            // If we received everything we can check if the data are valid
-
-            for (size_t i = 0; i < iCheckCount; ++i)
-            {
-                if (iSerial_out.getInQueStat() < 4)
-                {
-                    throw std::runtime_error("Not expected!");
-                }
-
-                iSerial_out.readBytes(writeBuffer, 4, 0, 0);
-
-                // error checking
-                if (writeBuffer[0] != 'A' || writeBuffer[1] != 'p' || writeBuffer[2] != 'A' || writeBuffer[3] != 'c')
-                {
-                    // Invalid return value detected repeat the write
-                    iCheck_buffer.push_back(iCheck_buffer.front());
-                }
-                iCheck_buffer.pop_front();
-            }
-            iCheckCount = 0;
-        }
-
         writeBuffer[3] = 'l';
-        for (auto &iter : iCheck_buffer)
+        for (size_t i = 0; (i+1) < iWriteBuffer.size(); i += 2)
         {
             writeBuffer[0] = 'p';
-            writeBuffer[1] = iter.iPosX;
-            writeBuffer[2] = iter.iPosY;
+            writeBuffer[1] = iWriteBuffer[i];
+            writeBuffer[2] = iWriteBuffer[i+1];
 
-            iSerial_out.writeBytes(writeBuffer, 4, &bytesWritten);
-            if (bytesWritten != 4)
-            {
-                break;
+            if(writeBuffer[1] & 0x80) {
+                writeBuffer[0] = 'c';
+                writeBuffer[1] &= 0x7F;
+                writeBuffer[2] &= 0x7F;
             }
 
-            writeBuffer[0] = 'c';
-            writeBuffer[1] = iter.iChar;
-            writeBuffer[2] = iter.iAtr;
-
-            iSerial_out.writeBytes(writeBuffer, 4, &bytesWritten);
+            iSerialOut.writeBytes(writeBuffer, 4, &bytesWritten);
             if (bytesWritten != 4)
             {
-                break;
+                std::cout << "cannot write to comm!" << std::endl;
+                return;
             }
+        }
+        iCheckCount = iWriteBuffer.size() / 2;
 
-            ++iCheckCount;
+
+        for (size_t i = 0; i < iCheckCount * 2; ++i) {
+            iWriteBuffer.pop_front();
+        }
+        iSerialOut.flushInQue();
+    }
+
+    int checkResponse() {
+        unsigned char readBuffer[4] = {};
+
+        if(iCheckCount != iSerialOut.getInQueStat()) {
+            
+            return -1;
+        }
+
+        for (size_t i = 0; i < iCheckCount; ++i)
+        {
+            readBuffer[1] = iWriteBuffer.front();
+            iWriteBuffer.pop_front();
+            iWriteBuffer.pop_front();
+
+            readBuffer[2] = 'A';
+
+            if(readBuffer[1] & 0x80) 
+                readBuffer[3] = 'c';
+            else 
+                readBuffer[3] = 'p';
+            
+
+            iSerialOut.readBytes(readBuffer, 2, 0, 0);
+            if (readBuffer[0] == readBuffer[2] && readBuffer[1] == readBuffer[3])
+            {
+                std::cout << "loss detected!" << std::endl;
+            }
         }
     }
 
     // calculates new X and Y positions
     void newPos()
     {
+        int newX = iRealX + iMoveX;
+        int newY = iRealY + iMoveY;
+
+        // Update 
         iRealX += iMoveX;
         iRealY += iMoveY;
 
         // has change occured?
-        if(iRealX / 100 != iScrPosX || iRealY / 100 != iScrPosY) {
+        if(newX / 100 != iScrPosX || newY / 100 != iScrPosY) {
+
             iPrevX = iScrPosX;
             iPrevY = iScrPosY;
 
@@ -441,95 +382,96 @@ public:
             }
 
             // Right
-            if(iScrPosX >= (maxX - 1) && iScrPosY >= iPadRight && iScrPosY < (iPadRight + padSize)) {
-                iMoveX = -abs(iMoveX) - 5;
+            if(iScrPosX == (maxX - 1) && iScrPosY >= iPadRight && iScrPosY < (iPadRight + padSize)) {
+                iMoveX = -(abs(iMoveX) + 5);
                 char change = getKeyDownRight();
                 if(change != 0) {
                     iMoveY += 10 * change;
                 }
             }
+
             else if(iScrPosX >= maxX) {
                 // Výhra!!! 
                 iMoveX = -50;
                 iMoveY = (rand() % 100) - 50;
                 iRealX = 39 * 100;
                 iRealY = 20 * 100;
-                iScrPosX = 39;
-                iScrPosY = 20;
+                iScrPosX = (char)(iRealX / 100);
+                iScrPosY = (char)(iRealY / 100);
 
                 ++iScoreLeft;
                 updateScore();
-
-                return;
             }
+
             // Left
-            else if(iScrPosX <= (minX + 1) && iScrPosY >= iPadLeft && iScrPosY < (iPadLeft + padSize)) {
+            else if(iScrPosX == (minX + 1) && iScrPosY >= iPadLeft && iScrPosY < (iPadLeft + padSize)) {
                 iMoveX = abs(iMoveX) + 5;
                 char change = getKeyDownLeft();
                 if(change != 0) {
                     iMoveY += 10 * change;
                 }
             }
+
             else if(iScrPosX <= minX) {
                 // Výhra!!! 
                 iMoveX = 50;
                 iMoveY = (rand() % 100) - 50;
                 iRealX = 40 * 100;
                 iRealY = 20 * 100;
-                iScrPosX = 40;
-                iScrPosY = 20;
+                iScrPosX = (char)(iRealX / 100);
+                iScrPosY = (char)(iRealY / 100);
 
                 ++iScoreRight;
                 updateScore();
-
-                return;
             }
         }
 
         return;
     }
 };
+ 
+std::chrono::steady_clock::time_point now() { return std::chrono::steady_clock::now(); }
+ 
+std::chrono::steady_clock::time_point awake_time()
+{
+    std::chrono::milliseconds time(20);
+    return now() + time;
+}
 
 int main(int argc, char const *argv[])
 {
+
     char error;
     try {
         pingPong game(SERIAL_PORT_OUT, 40, 20);
 
         game.initScreen();
 
+        game.flushBuffer();
+
         while(!(GetKeyState(VK_ESCAPE) & WM_KEYDOWN)) {
+            
+            auto start = now();
+            auto wait = awake_time();
             // Clear previous position
             game.clearPosChar();
 
+            // detects the keyboard inputs and moves the pads
+            game.readKeyboard();
+
+            // calculates the new position of ball
             game.newPos();
 
             // Write new position
             game.writePosChar();
-
-            switch (getKeyDownLeft())
-            {
-                case -1:
-                    game.moveLeftPadUp();
-                    break;
-                case 1:
-                    game.moveLeftPadDown();
-                default:
-                    break;
-            }
-
-            switch (getKeyDownRight())
-            {
-                case -1:
-                    game.moveRightPadUp();
-                    break;
-                case 1:
-                    game.moveRightPadDown();
-                default:
-                    break;
-            }
             
-            Sleep(20);
+            // Send to comm.
+            game.flushBuffer();
+            // Wait for response (also for synch. fps)
+            std::this_thread::sleep_until(wait);
+            
+            std::chrono::duration<double, std::milli> elapsed{now() - start};
+            std::cout << "Waited " << elapsed.count() << " ms\n";
         }
     }
     catch (...) {
@@ -574,4 +516,5 @@ int main(int argc, char const* argv[]) {
     buffer[2] = farbaBiela;
     serial_out.writeBytes(buffer, 4, &bytesWritten);
 }*/
+
 
