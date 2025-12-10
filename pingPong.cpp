@@ -81,7 +81,7 @@ char getKeyDownRight() {
 class pingPong
 {
     std::deque<unsigned char> iWriteBuffer;
-    size_t iCheckCount;
+    std::deque<unsigned char> iCheckBuffer;
     serialib iSerialOut;
 
     char iScoreLeft = 0, iScoreRight = 0;
@@ -161,7 +161,9 @@ class pingPong
         printChar(iScoreRight + '0', farbaKontrast);
     }
 public:
-    pingPong(const char *aPort, char aPosX, char aPosY) : iWriteBuffer(), iSerialOut()
+    pingPong() = default;
+
+    pingPong(char aPosX, char aPosY) : iWriteBuffer(), iSerialOut()
     {
         if(aPosX > maxX || aPosY > maxY) {
             throw std::invalid_argument("Neplatne pociatocne pozicie");
@@ -176,21 +178,25 @@ public:
 
         iMoveX = 50;
         iMoveY = 50;
+    }
 
+    ~pingPong() {
+        iSerialOut.closeDevice();
+    }
+
+    void connect(const char *aPort) {
         char error = iSerialOut.openDevice(aPort, 115200);
 
-        if (error != 1)
-        {
+        if (error != 1) {
+            iSerialOut.closeDevice();
             throw std::runtime_error("Nepodarilo sa pripojit k zbernici!");
         }
 
+        iWriteBuffer.clear();
+        iCheckBuffer.clear();
+
         iSerialOut.flushInQue();
     }
-
-    ~pingPong()
-    {
-        iSerialOut.closeDevice();
-    };
 
     void writePosChar(TPosChar & aOper) {
         
@@ -286,6 +292,10 @@ public:
         return;
     }
 
+    bool checkConnection() {
+        return iSerialOut.isDeviceOpen();
+    }
+
     // Starts the checking and writing process
     void flushBuffer() {
         unsigned char writeBuffer[4] = {'c', ' ', farbaBiela, 'l'};
@@ -307,47 +317,45 @@ public:
             iSerialOut.writeBytes(writeBuffer, 4, &bytesWritten);
             if (bytesWritten != 4)
             {
-                std::cout << "cannot write to comm!" << std::endl;
-                return;
+                if(iSerialOut.getInQueStat() > 4000) {
+                    i -= 2;
+                    continue;
+                }
+                iSerialOut.closeDevice();
+                throw std::runtime_error("Kábel bol odpojený!");
+            }
+            iCheckBuffer.push_back(writeBuffer[0]);
+
+            if(iSerialOut.getInQueStat() >= 2) {
+                if(checkResponse() < 0) {
+                    // NOP
+                }
             }
         }
-        iCheckCount = iWriteBuffer.size() / 2;
 
-
-        for (size_t i = 0; i < iCheckCount * 2; ++i) {
+        while (iWriteBuffer.size()) {
             iWriteBuffer.pop_front();
         }
-        iSerialOut.flushInQue();
     }
 
     int checkResponse() {
-        unsigned char readBuffer[4] = {};
+        unsigned char readBuffer[2] = {};
+        int count = 0;
 
-        if(iCheckCount != iSerialOut.getInQueStat()) {
-            
-            return -1;
-        }
-
-        for (size_t i = 0; i < iCheckCount; ++i)
-        {
-            readBuffer[1] = iWriteBuffer.front();
-            iWriteBuffer.pop_front();
-            iWriteBuffer.pop_front();
-
-            readBuffer[2] = 'A';
-
-            if(readBuffer[1] & 0x80) 
-                readBuffer[3] = 'c';
-            else 
-                readBuffer[3] = 'p';
-            
-
+        while(iSerialOut.getInQueStat() >= 2) {
             iSerialOut.readBytes(readBuffer, 2, 0, 0);
-            if (readBuffer[0] == readBuffer[2] && readBuffer[1] == readBuffer[3])
+
+            if (readBuffer[0] != 'A' || readBuffer[1] != iCheckBuffer.front())
             {
                 std::cout << "loss detected!" << std::endl;
+                return -1;
             }
+
+            iCheckBuffer.pop_front();
+            ++count;
         }
+
+        return count;
     }
 
     // calculates new X and Y positions
@@ -440,17 +448,22 @@ std::chrono::steady_clock::time_point awake_time()
 
 int main(int argc, char const *argv[])
 {
-
     char error;
-    try {
-        pingPong game(SERIAL_PORT_OUT, 40, 20);
+    pingPong game(40, 20);
+    std::cout << "Pro ukončení stlač ESC!" << std::endl;
 
-        game.initScreen();
+    while(!(GetKeyState(VK_ESCAPE) & WM_KEYDOWN)) {
+        try {
+            if(!game.checkConnection()) {
+                std::cout << "Hra se načíta.... " << std::endl;
+                game.connect(SERIAL_PORT_OUT);
 
-        game.flushBuffer();
+                game.initScreen();
 
-        while(!(GetKeyState(VK_ESCAPE) & WM_KEYDOWN)) {
-            
+                game.flushBuffer();
+                std::cout << "Hra běží!" << std::endl;
+            }
+        
             auto start = now();
             auto wait = awake_time();
             // Clear previous position
@@ -469,52 +482,26 @@ int main(int argc, char const *argv[])
             game.flushBuffer();
             // Wait for response (also for synch. fps)
             std::this_thread::sleep_until(wait);
+            game.checkResponse();
             
             std::chrono::duration<double, std::milli> elapsed{now() - start};
-            std::cout << "Waited " << elapsed.count() << " ms\n";
+            //std::cout << "Waited " << elapsed.count() << " ms\n" << std::endl;    
         }
-    }
-    catch (...) {
-        std::cerr << "an exception was thrown" << std::endl;
+        catch (std::runtime_error & e) {
+            std::cout << e.what() << "\nPripoj naspět kábel, a stlač ENTER. Pro ukončení stlač ESC!" << std::endl;
+            while(true) {
+                if(GetKeyState(VK_ESCAPE) & WM_KEYDOWN) {
+                    return -1;
+                }
+                else if (GetKeyState(VK_RETURN) & WM_KEYDOWN) {
+                    break;
+                }
+
+                Sleep(10);
+            }
+        }
     }
 
     //std::cin >> error;
     return 0;
 }
-
-/*
-Funguje! :)
-int main(int argc, char const* argv[]) {
-    char error;
-    serialib serial_out;
-
-    error = serial_out.openDevice(SERIAL_PORT_OUT, 115200);
-
-    if (error != 1) {
-        throw std::runtime_error("Nepodarilo sa pripojit k zbernici!");
-    }
-
-    serial_out.flushInQue();
-    char buffer[4] = {'p', 0, 0, 'l'};
-    unsigned int bytesWritten;
-
-    serial_out.writeBytes(buffer, 4, &bytesWritten);
-    if(bytesWritten != 4) {
-        return -1;
-    }
-    buffer[0] = 'c';
-    buffer[1] = ' ';
-    buffer[2] = farbaCierna;
-    for (size_t i = 0; i < 80*40 - 1; ++i) {
-
-        serial_out.writeBytes(buffer, 4, &bytesWritten);
-
-        if (bytesWritten != 4) {
-            break;
-        }
-    }
-    buffer[2] = farbaBiela;
-    serial_out.writeBytes(buffer, 4, &bytesWritten);
-}*/
-
-
